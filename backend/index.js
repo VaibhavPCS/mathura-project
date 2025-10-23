@@ -49,10 +49,20 @@ const connectToDatabase = async () => {
     }
 };
 
-// Connect to database on startup
-connectToDatabase().catch(console.error);
+// Don't connect immediately - let each request handle it
 
 app.use(express.json());
+
+// Middleware to ensure database connection for API routes
+app.use('/api-v1', async (req, res, next) => {
+    try {
+        await connectToDatabase();
+        next();
+    } catch (error) {
+        console.error('Database connection failed:', error);
+        res.status(500).json({ message: 'Database connection failed' });
+    }
+});
 
 app.get('/', async (req, res) => {
     try {
@@ -63,18 +73,30 @@ app.get('/', async (req, res) => {
     }
 });
 
+// Simple health check without database
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'OK', 
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development'
+    });
+});
+
 app.use("/api-v1", routes);
 
 app.use('/uploads', express.static('uploads'));
 
-app.use((err,req,res,next) => {
-    console.log(err.stack);
-    res.status(500).json({ message: "Internal Server Error"});
-})
+app.use((err, req, res, next) => {
+    console.error('Error:', err.stack);
+    if (res.headersSent) {
+        return next(err);
+    }
+    res.status(500).json({ message: "Internal Server Error" });
+});
 
-app.use ((req,res) => {
-     res.status(404).json({ message: "Not Found"});
-})
+app.use((req, res) => {
+    res.status(404).json({ message: "Not Found" });
+});
 
 // Export the app for Vercel serverless functions
 export default app;
